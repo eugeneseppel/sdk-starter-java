@@ -21,7 +21,7 @@ response: ["xxx","test"]
 GET /Users/{identity} returns one full user object
 response: {
   "username": "xxx",
-  "preferred" : "sms", -- todo!!!!
+  "preferred" : "sms",
   "bindings": [
     {
       "type": "apn",
