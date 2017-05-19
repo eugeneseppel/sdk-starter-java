@@ -78,6 +78,15 @@ public class ServerApp {
         String preferred;
     }
 
+    //{entry: [ {messaging: [message: {sender: {id: "XXXX"} } ] } ] }
+    /*private static class FaceBookAuthRequest {
+        static class sender {
+
+        }
+
+        List<> lst;
+    }*/
+
 
     private static class StandartResponse {
         String message;
@@ -115,24 +124,7 @@ public class ServerApp {
         // Log all requests and responses
         afterAfter(new LoggingFilter());
 
-        // Get the configuration for variables for the health check
-        get("/config", (request, response) -> {
-
-            Map<String, Object> json = new HashMap<>();
-            String apiSecret = configuration.get("TWILIO_API_SECRET");
-            boolean apiSecretConfigured = (apiSecret != null) && !apiSecret.isEmpty();
-
-            json.putAll(configuration);
-            json.put("TWILIO_API_SECRET", apiSecretConfigured);
-
-
-            // Render JSON response
-            Gson gson = new Gson();
-            response.type("application/json");
-            return gson.toJson(json);
-        });
-
-        get("/users", "application/json", (request, response) -> {
+        get("/api/users", "application/json", (request, response) -> {
             logger.debug(request.body());
             // List the bindings
             Map<String, User> userDict = getUserMap(configuration);
@@ -142,7 +134,7 @@ public class ServerApp {
             return gson.toJson(userDict.keySet().toArray());
         });
 
-        get("/users/:id", "application/json", (request, response) -> {
+        get("/api/users/:id", "application/json", (request, response) -> {
             logger.debug(request.body());
             // List the bindings
             Map<String, User> userDict = getUserMap(configuration);
@@ -156,62 +148,7 @@ public class ServerApp {
             //return gson.toJson(userDict.values().toArray());
         });
 
-
-        // Create an access token using our Twilio credentials
-        get("/token", "application/json", (request, response) -> {
-            // Generate a random username for the connecting client
-            String identity = faker.firstName() + faker.lastName() + faker.zipCode();
-
-            // Create an endpoint ID which uniquely identifies the user on their current device
-            String appName = "TwilioAppDemo";
-
-            // Create access token builder
-            AccessToken.Builder builder = new AccessToken.Builder(
-                    configuration.get("TWILIO_ACCOUNT_SID"),
-                    configuration.get("TWILIO_API_KEY"),
-                    configuration.get("TWILIO_API_SECRET")
-            ).identity(identity);
-
-            List<Grant> grants = new ArrayList<>();
-
-            // Add Sync grant if configured
-            if (configuration.containsKey("TWILIO_SYNC_SERVICE_SID")) {
-                SyncGrant grant = new SyncGrant();
-                grant.setServiceSid(configuration.get("TWILIO_SYNC_SERVICE_SID"));
-                grants.add(grant);
-            }
-
-            // Add Chat grant if configured
-            if (configuration.containsKey("TWILIO_CHAT_SERVICE_SID")) {
-                IpMessagingGrant grant = new IpMessagingGrant();
-                grant.setServiceSid(configuration.get("TWILIO_CHAT_SERVICE_SID"));
-                grants.add(grant);
-            }
-
-            // Add Video grant if configured
-            if (configuration.containsKey("TWILIO_CONFIGURATION_SID")) {
-                VideoGrant grant  = new VideoGrant();
-                grant.setConfigurationProfileSid(configuration.get("TWILIO_CONFIGURATION_SID"));
-                grants.add(grant);
-            }
-
-            builder.grants(grants);
-
-            AccessToken token = builder.build();
-
-
-            // create JSON response payload
-            HashMap<String, String> json = new HashMap<String, String>();
-            json.put("identity", identity);
-            json.put("token", token.toJwt());
-
-            // Render JSON response
-            Gson gson = new Gson();
-            response.type("application/json");
-            return gson.toJson(json);
-        });
-
-        post("/users/:id/config", (request, response) -> {
+        post("/api/users/:id/config", (request, response) -> {
 
             logger.debug(request.body());
             Gson gson = new Gson();
@@ -273,7 +210,7 @@ public class ServerApp {
             return gson.toJson(standartResponse);
         });
 
-        post("/register", (request, response) -> {
+        post("/api/register", (request, response) -> {
             logger.debug(request.body());
 
             // Decode the JSON Body
@@ -309,7 +246,34 @@ public class ServerApp {
             }
         });
 
-        post("/users/:id/bindings", "application/json", (request, response) -> {
+        post("/api/messenger_auth", "application/json", (request, response) -> {
+            logger.debug(request.body());
+
+            // {entry: [ {messaging: [message: {sender: {id: "XXXX"} } ] } ] }
+
+            Gson gson = new Gson();
+            StandartResponse standartResponse = new StandartResponse();
+            int statusCode = 500;
+
+            try {
+
+
+            } catch (com.twilio.exception.ApiException ex) {
+                standartResponse.message = "Failed to create binding: " + ex.getMessage();
+                standartResponse.error = ex.getMessage();
+                statusCode = ex.getStatusCode();
+            } catch (Exception ex) {
+                standartResponse.message = "Failed to create binding: " + ex.getMessage();
+                standartResponse.error = ex.getMessage();
+            }
+            logger.error(standartResponse.message);
+            response.type("application/json");
+            response.status(statusCode);
+            logger.info("Code: " + statusCode);
+            return gson.toJson(standartResponse);
+        });
+
+        post("/api/users/:id/bindings", "application/json", (request, response) -> {
             logger.debug(request.body());
 
             Gson gson = new Gson();
@@ -369,7 +333,7 @@ public class ServerApp {
             return gson.toJson(standartResponse);
         });
 
-        post("/users/:id/message", (request, response) -> {
+        post("/api/users/:id/message", (request, response) -> {
             logger.debug(request.body());
             Gson gson = new Gson();
             StandartResponse standartResponse = new StandartResponse();
@@ -412,7 +376,26 @@ public class ServerApp {
             return gson.toJson(standartResponse);
         });
 
-        post("/send-notification", (request, response) -> {
+        // Get the configuration for variables for the health check
+        /*
+        get("/config", (request, response) -> {
+
+            Map<String, Object> json = new HashMap<>();
+            String apiSecret = configuration.get("TWILIO_API_SECRET");
+            boolean apiSecretConfigured = (apiSecret != null) && !apiSecret.isEmpty();
+
+            json.putAll(configuration);
+            json.put("TWILIO_API_SECRET", apiSecretConfigured);
+
+
+            // Render JSON response
+            Gson gson = new Gson();
+            response.type("application/json");
+            return gson.toJson(json);
+        });
+        */
+
+        /*post("/send-notification", (request, response) -> {
             try {
                 // Get the identity
                 String identity = request.raw().getParameter("identity");
@@ -446,6 +429,62 @@ public class ServerApp {
                 return new Gson().toJson(sendNotificationResponse);
             }
         });
+        */
+        // Create an access token using our Twilio credentials
+        /*
+        get("/token", "application/json", (request, response) -> {
+            // Generate a random username for the connecting client
+            String identity = faker.firstName() + faker.lastName() + faker.zipCode();
+
+            // Create an endpoint ID which uniquely identifies the user on their current device
+            String appName = "TwilioAppDemo";
+
+            // Create access token builder
+            AccessToken.Builder builder = new AccessToken.Builder(
+                    configuration.get("TWILIO_ACCOUNT_SID"),
+                    configuration.get("TWILIO_API_KEY"),
+                    configuration.get("TWILIO_API_SECRET")
+            ).identity(identity);
+
+            List<Grant> grants = new ArrayList<>();
+
+            // Add Sync grant if configured
+            if (configuration.containsKey("TWILIO_SYNC_SERVICE_SID")) {
+                SyncGrant grant = new SyncGrant();
+                grant.setServiceSid(configuration.get("TWILIO_SYNC_SERVICE_SID"));
+                grants.add(grant);
+            }
+
+            // Add Chat grant if configured
+            if (configuration.containsKey("TWILIO_CHAT_SERVICE_SID")) {
+                IpMessagingGrant grant = new IpMessagingGrant();
+                grant.setServiceSid(configuration.get("TWILIO_CHAT_SERVICE_SID"));
+                grants.add(grant);
+            }
+
+            // Add Video grant if configured
+            if (configuration.containsKey("TWILIO_CONFIGURATION_SID")) {
+                VideoGrant grant  = new VideoGrant();
+                grant.setConfigurationProfileSid(configuration.get("TWILIO_CONFIGURATION_SID"));
+                grants.add(grant);
+            }
+
+            builder.grants(grants);
+
+            AccessToken token = builder.build();
+
+
+            // create JSON response payload
+            HashMap<String, String> json = new HashMap<String, String>();
+            json.put("identity", identity);
+            json.put("token", token.toJwt());
+
+            // Render JSON response
+            Gson gson = new Gson();
+            response.type("application/json");
+            return gson.toJson(json);
+        });
+        */
     }
 
     private static Map<String, User> getUserMap(Map<String, String> configuration) {
