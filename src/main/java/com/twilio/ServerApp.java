@@ -7,6 +7,7 @@ import static spark.Spark.afterAfter;
 
 import com.twilio.base.ResourceSet;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Hashtable;
@@ -46,8 +47,6 @@ public class ServerApp {
         public User(String username) {
             this.username = username;
             bindings.add(new UserBinding("apn"));
-            bindings.add(new UserBinding("gcm"));
-            bindings.add(new UserBinding("fcm"));
             bindings.add(new UserBinding("sms"));
             bindings.add(new UserBinding("facebook-messenger"));
         }
@@ -60,6 +59,7 @@ public class ServerApp {
     private static class BindingConfigRequest {
         String type;
         String address;
+        boolean acceptOffers;
     }
 
     private static class MessageRequest {
@@ -90,6 +90,7 @@ public class ServerApp {
     }
 
     static final String preferred= "preferred";
+    static final String marketingEnabled="marketingEnabled";
 
     public static void main(String[] args) {
 
@@ -214,6 +215,8 @@ public class ServerApp {
 
             logger.debug(request.body());
             Gson gson = new Gson();
+            StandartResponse standartResponse = new StandartResponse();
+            int statusCode = 500;
             try {
                 UserConfigRequest configRequest = gson.fromJson(request.body(), UserConfigRequest.class);
 
@@ -253,24 +256,21 @@ public class ServerApp {
                     }
                 }
 
-                // Send a JSON response indicating success
-                StandartResponse standartResponse = new StandartResponse();
-                //request.
                 standartResponse.message = "OK " + request.params(":id") + " " + configRequest.preferred;
                 response.type("application/json");
                 return gson.toJson(standartResponse);
-
-            } catch (Exception ex) {
-                logger.error("Exception creating binding: " + ex.getMessage(), ex);
-
-                // Send a JSON response indicating an error
-                StandartResponse standartResponse = new StandartResponse();
+            } catch (com.twilio.exception.ApiException ex) {
                 standartResponse.message = "Failed to config user: " + ex.getMessage();
                 standartResponse.error = ex.getMessage();
-                response.type("application/json");
-                response.status(500);
-                return gson.toJson(standartResponse);
+                statusCode = ex.getStatusCode();
+            } catch (Exception ex) {
+                standartResponse.message = "Failed to config user: " + ex.getMessage();
+                standartResponse.error = ex.getMessage();
             }
+            logger.error("Exception configuring user: " + standartResponse.error );
+            response.type("application/json");
+            response.status(statusCode);
+            return gson.toJson(standartResponse);
         });
 
         post("/register", (request, response) -> {
@@ -313,10 +313,11 @@ public class ServerApp {
             logger.debug(request.body());
 
             Gson gson = new Gson();
+            StandartResponse standartResponse = new StandartResponse();
+            int statusCode = 500;
             try {
                 final String identity = request.params(":id");
                 // Send a JSON response indicating success
-                StandartResponse standartResponse = new StandartResponse();
 
                 BindingConfigRequest bindingConfigRequest = gson.fromJson(request.body(), BindingConfigRequest.class);
 
@@ -337,11 +338,14 @@ public class ServerApp {
                     }
                 }
 
+                List<String> tags = new LinkedList<>();
+                if (bindingConfigRequest.acceptOffers)
+                    tags.add("marketingEnabled");
                 // Create a binding
                 Binding.BindingType bindingType = Binding.BindingType.forValue(bindingConfigRequest.type);
                 BindingCreator creator = Binding.creator(configuration.get("TWILIO_NOTIFICATION_SERVICE_SID"),
                         bindingType + ":" + bindingConfigRequest.address + identity,
-                        identity, bindingType, bindingConfigRequest.address);
+                        identity, bindingType, bindingConfigRequest.address).setTag(tags);
 
                 Binding binding = creator.create();
                 logger.info("Binding successfully created");
@@ -350,39 +354,32 @@ public class ServerApp {
                 response.type("application/json");
                 return gson.toJson(standartResponse);
 
-            } catch (Exception ex) {
-                logger.error("Exception creating binding: " + ex.getMessage(), ex);
-
-                // Send a JSON response indicating an error
-                StandartResponse standartResponse = new StandartResponse();
-                standartResponse.message = "Failed to config binding: " + ex.getMessage();
+            } catch (com.twilio.exception.ApiException ex) {
+                standartResponse.message = "Failed to create binding: " + ex.getMessage();
                 standartResponse.error = ex.getMessage();
-                response.type("application/json");
-                response.status(500);
-                return gson.toJson(standartResponse);
+                statusCode = ex.getStatusCode();
+            } catch (Exception ex) {
+                standartResponse.message = "Failed to create binding: " + ex.getMessage();
+                standartResponse.error = ex.getMessage();
             }
-            // List the bindings
-            //Map<String, User> userDict = getUserMap(configuration);
-
-            //response.type("application/json");
-            //Gson gson = new Gson();
-
-            //final String id = request.params(":id");
-            //return gson.toJson(userDict.get(id));
-
-            //return gson.toJson(userDict.values().toArray());
+            logger.error(standartResponse.message);
+            response.type("application/json");
+            response.status(statusCode);
+            logger.info("Code: " + statusCode);
+            return gson.toJson(standartResponse);
         });
 
         post("/users/:id/message", (request, response) -> {
             logger.debug(request.body());
             Gson gson = new Gson();
+            StandartResponse standartResponse = new StandartResponse();
+            int statusCode = 500;
             try {
                 // Get the identity
                 final String identity = request.params(":id");
 
                 MessageRequest messageRequest = gson.fromJson(request.body(), MessageRequest.class);
 
-                StandartResponse standartResponse = new StandartResponse();
                 standartResponse.message = "OK " + identity
                         + " " + messageRequest.text + " " + messageRequest.preferred;
 
@@ -401,17 +398,18 @@ public class ServerApp {
                 response.type("application/json");
                 return new Gson().toJson(standartResponse);
 
-            } catch (Exception ex) {
-                logger.error("Exception sending notification: " + ex.getMessage(), ex);
-
-                // Send a JSON response indicating an error
-                StandartResponse standartResponse = new StandartResponse();
-                standartResponse.message = "Failed to create notification: " + ex.getMessage();
+            } catch (com.twilio.exception.ApiException ex) {
+                standartResponse.message = "Failed to send message: " + ex.getMessage();
                 standartResponse.error = ex.getMessage();
-                response.type("application/json");
-                response.status(500);
-                return new Gson().toJson(standartResponse);
+                statusCode = ex.getStatusCode();
+            } catch (Exception ex) {
+                standartResponse.message = "Failed to send message: " + ex.getMessage();
+                standartResponse.error = ex.getMessage();
             }
+            logger.error(standartResponse.message);
+            response.type("application/json");
+            response.status(statusCode);
+            return gson.toJson(standartResponse);
         });
 
         post("/send-notification", (request, response) -> {
@@ -474,7 +472,7 @@ public class ServerApp {
             //TODO: rewrite it
             for (UserBinding ub : user.bindings) {
                 if (ub.type.equals(bindingType)) {
-                    ub.offers = tags.contains("marketingEnabled");
+                    ub.offers = tags.contains(marketingEnabled);
                     ub.status = (bindingType.equals("sms")) ? binding.getAddress() : "Registered";
                 }
             }
