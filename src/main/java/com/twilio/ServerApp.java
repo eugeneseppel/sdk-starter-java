@@ -5,39 +5,80 @@ import static spark.Spark.post;
 import static spark.Spark.staticFileLocation;
 import static spark.Spark.afterAfter;
 
+import com.twilio.base.ResourceSet;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Hashtable;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
 import com.github.javafaker.Faker;
 import com.google.gson.Gson;
-import com.google.gson.JsonObject;
 
 
 import com.twilio.jwt.accesstoken.*;
 import com.twilio.rest.notify.v1.service.BindingCreator;
 import com.twilio.rest.notify.v1.service.Binding;
 import com.twilio.rest.notify.v1.service.Notification;
-import com.twilio.rest.notify.v1.service.NotificationCreator;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+//import com.twilio.rest.notify.service.Binding;
 
-import spark.ModelAndView;
+
 
 public class ServerApp {
 
     final static Logger logger = LoggerFactory.getLogger(ServerApp.class);
 
-    private class BindingRequest {
+    static class UserBinding {
+        public UserBinding(String type) {
+            this.type = type;
+        }
+        public String type;
+        public String status = "Not registered";
+        public Boolean offers = false;
+    }
+
+    static class User {
+        public User(String username) {
+            this.username = username;
+            bindings.add(new UserBinding("apn"));
+            bindings.add(new UserBinding("gcm"));
+            bindings.add(new UserBinding("fcm"));
+            bindings.add(new UserBinding("sms"));
+        }
+
+        public String username;
+        public List<UserBinding> bindings = new LinkedList<>();
+        public String preferred;
+    }
+
+    private static class BindingConfigRequest {
+        String type;
+        String address;
+    }
+
+    private static class MessageRequest {
+        String text;
+        boolean preferred = false;
+    }
+
+    private static class BindingRequest {
         String endpoint;
         String identity;
         String BindingType;
         String Address;
     }
 
-    private static class BindingResponse {
+    private static class UserConfigRequest {
+        String preferred;
+    }
+
+
+    private static class StandartResponse {
         String message;
         String error;
     }
@@ -47,6 +88,7 @@ public class ServerApp {
         String error;
     }
 
+    static final String preferred= "preferred";
 
     public static void main(String[] args) {
 
@@ -55,7 +97,6 @@ public class ServerApp {
 
         // Create a Faker instance to generate a random username for the connecting user
         Faker faker = new Faker();
-
 
         // Set up configuration from environment variables
         Map<String, String> configuration = new HashMap<>();
@@ -66,7 +107,9 @@ public class ServerApp {
         configuration.put("TWILIO_CONFIGURATION_SID",System.getenv("TWILIO_CONFIGURATION_SID"));
         configuration.put("TWILIO_CHAT_SERVICE_SID",System.getenv("TWILIO_CHAT_SERVICE_SID"));
         configuration.put("TWILIO_SYNC_SERVICE_SID",System.getenv("TWILIO_SYNC_SERVICE_SID"));
+        configuration.put("TWILIO_AUTH_TOKEN",System.getenv("TWILIO_AUTH_TOKEN"));
 
+        Twilio.init(configuration.get("TWILIO_ACCOUNT_SID"), configuration.get("TWILIO_AUTH_TOKEN"));
         // Log all requests and responses
         afterAfter(new LoggingFilter());
 
@@ -86,6 +129,31 @@ public class ServerApp {
             response.type("application/json");
             return gson.toJson(json);
         });
+
+        get("/users", "application/json", (request, response) -> {
+            logger.debug(request.body());
+            // List the bindings
+            Map<String, User> userDict = getUserMap(configuration);
+
+            response.type("application/json");
+            Gson gson = new Gson();
+            return gson.toJson(userDict.keySet().toArray());
+        });
+
+        get("/users/:id", "application/json", (request, response) -> {
+            logger.debug(request.body());
+            // List the bindings
+            Map<String, User> userDict = getUserMap(configuration);
+
+            response.type("application/json");
+            Gson gson = new Gson();
+
+            final String id = request.params(":id");
+            return gson.toJson(userDict.get(id));
+
+            //return gson.toJson(userDict.values().toArray());
+        });
+
 
         // Create an access token using our Twilio credentials
         get("/token", "application/json", (request, response) -> {
@@ -141,18 +209,75 @@ public class ServerApp {
             return gson.toJson(json);
         });
 
+        post("/users/:id/config", (request, response) -> {
+
+            logger.debug(request.body());
+            Gson gson = new Gson();
+            try {
+                UserConfigRequest configRequest = gson.fromJson(request.body(), UserConfigRequest.class);
+
+                ResourceSet<Binding> bindings = Binding.reader(configuration.get("TWILIO_NOTIFICATION_SERVICE_SID"))
+                        .setIdentity(request.params(":id"))
+                        .read();
+
+                for (Binding binding : bindings) {
+                    List<String> tags = binding.getTags();
+                    // selected binding
+                    if (binding.getBindingType().equals(configRequest.preferred)) {
+                        if (!tags.contains(preferred)) {
+                            // not preferred, set this binding as preferred
+                            tags.add(preferred);
+                            Binding newBinding = Binding.creator(
+                                    configuration.get("TWILIO_NOTIFICATION_SERVICE_SID"),
+                                    binding.getEndpoint(),
+                                    binding.getIdentity(),
+                                    Binding.BindingType.forValue(binding.getBindingType()),
+                                    binding.getAddress())
+                                    .setTag(tags)
+                                    .create();
+                        }
+                    } else { // all other bindings
+                        if (binding.getTags().contains(preferred)) {
+                            tags.remove(preferred);
+                            // is preferred, should be cleared
+                            Binding newBinding = Binding.creator(
+                                    configuration.get("TWILIO_NOTIFICATION_SERVICE_SID"),
+                                    binding.getEndpoint(),
+                                    binding.getIdentity(),
+                                    Binding.BindingType.forValue(binding.getBindingType()),
+                                    binding.getAddress())
+                                    .setTag(tags)
+                                    .create();
+                        }
+                    }
+                }
+
+                // Send a JSON response indicating success
+                StandartResponse standartResponse = new StandartResponse();
+                //request.
+                standartResponse.message = "OK " + request.params(":id") + " " + configRequest.preferred;
+                response.type("application/json");
+                return gson.toJson(standartResponse);
+
+            } catch (Exception ex) {
+                logger.error("Exception creating binding: " + ex.getMessage(), ex);
+
+                // Send a JSON response indicating an error
+                StandartResponse standartResponse = new StandartResponse();
+                standartResponse.message = "Failed to config user: " + ex.getMessage();
+                standartResponse.error = ex.getMessage();
+                response.type("application/json");
+                response.status(500);
+                return gson.toJson(standartResponse);
+            }
+        });
 
         post("/register", (request, response) -> {
-
-            // Authenticate with Twilio
-            Twilio.init(configuration.get("TWILIO_API_KEY"),configuration.get("TWILIO_API_SECRET"),configuration.get("TWILIO_ACCOUNT_SID"));
-
             logger.debug(request.body());
 
             // Decode the JSON Body
             Gson gson = new Gson();
             BindingRequest bindingRequest = gson.fromJson(request.body(), BindingRequest.class);
-
 
             // Create a binding
             Binding.BindingType bindingType = Binding.BindingType.forValue(bindingRequest.BindingType);
@@ -165,29 +290,130 @@ public class ServerApp {
                 logger.debug(binding.toString());
 
                 // Send a JSON response indicating success
-                BindingResponse bindingResponse = new BindingResponse();
-                bindingResponse.message = "Binding Created";
+                StandartResponse standartResponse = new StandartResponse();
+                standartResponse.message = "Binding Created";
                 response.type("application/json");
-                return gson.toJson(bindingResponse);
+                return gson.toJson(standartResponse);
 
             } catch (Exception ex) {
                 logger.error("Exception creating binding: " + ex.getMessage(), ex);
 
                 // Send a JSON response indicating an error
-                BindingResponse bindingResponse = new BindingResponse();
-                bindingResponse.message = "Failed to create binding: " + ex.getMessage();
-                bindingResponse.error = ex.getMessage();
+                StandartResponse standartResponse = new StandartResponse();
+                standartResponse.message = "Failed to create binding: " + ex.getMessage();
+                standartResponse.error = ex.getMessage();
                 response.type("application/json");
                 response.status(500);
-                return gson.toJson(bindingResponse);
+                return gson.toJson(standartResponse);
+            }
+        });
+
+        post("/users/:id/bindings", "application/json", (request, response) -> {
+            logger.debug(request.body());
+
+            Gson gson = new Gson();
+            try {
+                final String identity = request.params(":id");
+                // Send a JSON response indicating success
+                StandartResponse standartResponse = new StandartResponse();
+
+                BindingConfigRequest bindingConfigRequest = gson.fromJson(request.body(), BindingConfigRequest.class);
+
+                standartResponse.message = "OK " + identity
+                        + " " + bindingConfigRequest.type + " " + bindingConfigRequest.address;
+
+                //delete old bindings of same type
+                {
+                    ResourceSet<Binding> bindings = Binding.reader(configuration.get("TWILIO_NOTIFICATION_SERVICE_SID"))
+                            .setIdentity(identity)
+                            .read();
+
+                    for (Binding binding : bindings) {
+                        if (binding.getBindingType().equals(bindingConfigRequest.type)) {
+                            logger.info("Delete binding: " + binding.getEndpoint());
+                            Binding.deleter(configuration.get("TWILIO_NOTIFICATION_SERVICE_SID"), binding.getSid()).delete();
+                        }
+                    }
+                }
+
+                // Create a binding
+                Binding.BindingType bindingType = Binding.BindingType.forValue(bindingConfigRequest.type);
+                BindingCreator creator = Binding.creator(configuration.get("TWILIO_NOTIFICATION_SERVICE_SID"),
+                        bindingType + ":" + bindingConfigRequest.address + identity,
+                        identity, bindingType, bindingConfigRequest.address);
+
+                Binding binding = creator.create();
+                logger.info("Binding successfully created");
+                logger.debug(binding.toString());
+
+                response.type("application/json");
+                return gson.toJson(standartResponse);
+
+            } catch (Exception ex) {
+                logger.error("Exception creating binding: " + ex.getMessage(), ex);
+
+                // Send a JSON response indicating an error
+                StandartResponse standartResponse = new StandartResponse();
+                standartResponse.message = "Failed to config binding: " + ex.getMessage();
+                standartResponse.error = ex.getMessage();
+                response.type("application/json");
+                response.status(500);
+                return gson.toJson(standartResponse);
+            }
+            // List the bindings
+            //Map<String, User> userDict = getUserMap(configuration);
+
+            //response.type("application/json");
+            //Gson gson = new Gson();
+
+            //final String id = request.params(":id");
+            //return gson.toJson(userDict.get(id));
+
+            //return gson.toJson(userDict.values().toArray());
+        });
+
+        post("/users/:id/message", (request, response) -> {
+            logger.debug(request.body());
+            Gson gson = new Gson();
+            try {
+                // Get the identity
+                final String identity = request.params(":id");
+
+                MessageRequest messageRequest = gson.fromJson(request.body(), MessageRequest.class);
+
+                StandartResponse standartResponse = new StandartResponse();
+                standartResponse.message = "OK " + identity
+                        + " " + messageRequest.text + " " + messageRequest.preferred;
+
+                // Create the notification
+                Notification notification = Notification
+                        .creator(configuration.get("TWILIO_NOTIFICATION_SERVICE_SID"))
+                        .setBody(messageRequest.text)
+                        .setTag(messageRequest.preferred ? preferred : "all")
+                        .setIdentity(identity)
+                        .create();
+                logger.info("Notification successfully created");
+                //logger.debug(notification.toString());
+
+                // Send a JSON response indicating success
+
+                response.type("application/json");
+                return new Gson().toJson(standartResponse);
+
+            } catch (Exception ex) {
+                logger.error("Exception sending notification: " + ex.getMessage(), ex);
+
+                // Send a JSON response indicating an error
+                StandartResponse standartResponse = new StandartResponse();
+                standartResponse.message = "Failed to create notification: " + ex.getMessage();
+                standartResponse.error = ex.getMessage();
+                response.type("application/json");
+                response.status(500);
+                return new Gson().toJson(standartResponse);
             }
         });
 
         post("/send-notification", (request, response) -> {
-
-            // Authenticate with Twilio
-            Twilio.init(configuration.get("TWILIO_API_KEY"),configuration.get("TWILIO_API_SECRET"),configuration.get("TWILIO_ACCOUNT_SID"));
-
             try {
                 // Get the identity
                 String identity = request.raw().getParameter("identity");
@@ -221,5 +447,37 @@ public class ServerApp {
                 return new Gson().toJson(sendNotificationResponse);
             }
         });
+    }
+
+    private static Map<String, User> getUserMap(Map<String, String> configuration) {
+
+        ResourceSet<Binding> bindings = Binding.reader(configuration.get("TWILIO_NOTIFICATION_SERVICE_SID")).read();
+
+        Map<String, User> userDict = new Hashtable<>();
+        for (Binding binding : bindings) {
+            String username = binding.getIdentity();
+            User user;
+            if (!userDict.containsKey(username)) {
+                user = new User(username);
+                userDict.put(username, user);
+            } else {
+                user = userDict.get(username);
+            }
+
+            final String bindingType = binding.getBindingType();
+
+            HashSet<String> tags = new HashSet<>(binding.getTags());
+            if (tags.contains(preferred))
+                user.preferred = bindingType;
+
+            //TODO: rewrite it
+            for (UserBinding ub : user.bindings) {
+                if (ub.type.equals(bindingType)) {
+                    ub.offers = tags.contains("marketingEnabled");
+                    ub.status = (bindingType.equals("sms")) ? binding.getAddress() : "Registered";
+                }
+            }
+        }
+        return userDict;
     }
 }

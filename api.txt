@@ -1,0 +1,44 @@
+Standart response for posts:
+{message: "OK, ...."}
+or
+{message: "some info", error: "error message"}
+
+POST /users/:id/config
+request: { preferred: "sms" }
+
+POST /users/:id/bindings
+request: {type: "sms", address: "+372777777", acceptOffers: "true"} // only valid if type == sms
+
+POST /users/:id/message
+request: {text: "text", preferred: "true"}
+
+
+GET /Users
+response: ["xxx","test"]
+GET /Users/{identity} returns one full user object
+response: {
+  "username": "xxx",
+  "preferred" : "sms", -- todo!!!!
+  "bindings": [
+    {
+      "type": "apn",
+      "status": "Not registered",
+      "offers": false
+    },
+    {
+      "type": "gcm",
+      "status": "Not registered",
+      "offers": false
+    },
+    {
+      "type": "fcm",
+      "status": "Not registered",
+      "offers": false
+    },
+    {
+      "type": "sms",
+      "status": "+3725002233",
+      "offers": true
+    }
+  ]
+}
