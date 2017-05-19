@@ -2,12 +2,16 @@ package com.twilio;
 
 import static spark.Spark.get;
 import static spark.Spark.post;
+import static spark.Spark.redirect;
 import static spark.Spark.staticFileLocation;
 import static spark.Spark.afterAfter;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.twilio.base.ResourceSet;
-import java.util.ArrayList;
-import java.util.Arrays;
+import com.twilio.rest.notify.v1.service.Binding.BindingType;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Hashtable;
@@ -18,15 +22,13 @@ import java.util.Map;
 import com.github.javafaker.Faker;
 import com.google.gson.Gson;
 
-
-import com.twilio.jwt.accesstoken.*;
 import com.twilio.rest.notify.v1.service.BindingCreator;
 import com.twilio.rest.notify.v1.service.Binding;
 import com.twilio.rest.notify.v1.service.Notification;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-//import com.twilio.rest.notify.service.Binding;
+
 
 
 
@@ -46,9 +48,9 @@ public class ServerApp {
     static class User {
         public User(String username) {
             this.username = username;
-            bindings.add(new UserBinding("apn"));
-            bindings.add(new UserBinding("sms"));
-            bindings.add(new UserBinding("facebook-messenger"));
+            bindings.add(new UserBinding(BindingType.APN.toString()));
+            bindings.add(new UserBinding(BindingType.SMS.toString()));
+            bindings.add(new UserBinding(BindingType.FACEBOOK_MESSENGER.toString()));
         }
 
         public String username;
@@ -124,6 +126,8 @@ public class ServerApp {
         // Log all requests and responses
         afterAfter(new LoggingFilter());
 
+        redirect.get("/users/*", "/");
+
         get("/api/users", "application/json", (request, response) -> {
             logger.debug(request.body());
             // List the bindings
@@ -132,6 +136,10 @@ public class ServerApp {
             response.type("application/json");
             Gson gson = new Gson();
             return gson.toJson(userDict.keySet().toArray());
+        });
+
+        get("/api/messenger_auth", "application/json", (request, response) -> {
+            return request.queryParams("hub.challenge");
         });
 
         get("/api/users/:id", "application/json", (request, response) -> {
@@ -249,27 +257,62 @@ public class ServerApp {
         post("/api/messenger_auth", "application/json", (request, response) -> {
             logger.debug(request.body());
 
-            // {entry: [ {messaging: [message: {sender: {id: "XXXX"} } ] } ] }
-
             Gson gson = new Gson();
             StandartResponse standartResponse = new StandartResponse();
             int statusCode = 500;
 
             try {
+                // {entry:[{messaging:[{sender:{id:"XXX"}, optin: {ref: "test"} }]}]}
+                JsonArray messagingArray = new JsonParser().parse(request.body()).getAsJsonObject()
+                        .getAsJsonArray("entry")
+                        .get(0)
+                        .getAsJsonObject()
+                        .getAsJsonArray("messaging");
+
+                JsonObject messageObj = messagingArray
+                        .get(0)
+                        .getAsJsonObject();
+
+                String id = messageObj.get("sender").getAsJsonObject().get("id").getAsString();
+                String user = messageObj.get("optin").getAsJsonObject().get("ref").getAsString();
 
 
+                logger.info ("FACEBOOK ID= " + id + " User= " + user );
+                // FACEBOOK ID= "facebook user, vasia555 "
+                // we need identityUser, e.g. iphone6/test/gg/xxx
+
+                removeSameBindings(configuration, id, BindingType.FACEBOOK_MESSENGER.toString());
+
+                final Binding.BindingType bindingType = BindingType.FACEBOOK_MESSENGER;
+                final String address = id;
+                BindingCreator creator = Binding.creator(
+                        configuration.get("TWILIO_NOTIFICATION_SERVICE_SID"),
+                        bindingType + ":" + address + id,
+                        user,
+                        bindingType,
+                        address);
+
+                Binding binding = creator.create();
+
+                logger.debug(binding.toString());
+
+                standartResponse.message = "Facebook Binding successfully created";
+                logger.info(standartResponse.message);
+
+                response.type("application/json");
+                return gson.toJson(standartResponse);
             } catch (com.twilio.exception.ApiException ex) {
-                standartResponse.message = "Failed to create binding: " + ex.getMessage();
+                standartResponse.message = "Failed to register on Facebook: " + ex.getMessage();
                 standartResponse.error = ex.getMessage();
                 statusCode = ex.getStatusCode();
             } catch (Exception ex) {
-                standartResponse.message = "Failed to create binding: " + ex.getMessage();
+                logger.error("x: ", ex);
+                standartResponse.message = "Failed to register on Facebook: " + ex.getClass().toString();
                 standartResponse.error = ex.getMessage();
             }
             logger.error(standartResponse.message);
             response.type("application/json");
             response.status(statusCode);
-            logger.info("Code: " + statusCode);
             return gson.toJson(standartResponse);
         });
 
@@ -289,27 +332,22 @@ public class ServerApp {
                         + " " + bindingConfigRequest.type + " " + bindingConfigRequest.address;
 
                 //delete old bindings of same type
-                {
-                    ResourceSet<Binding> bindings = Binding.reader(configuration.get("TWILIO_NOTIFICATION_SERVICE_SID"))
-                            .setIdentity(identity)
-                            .read();
-
-                    for (Binding binding : bindings) {
-                        if (binding.getBindingType().equals(bindingConfigRequest.type)) {
-                            logger.info("Delete binding: " + binding.getEndpoint());
-                            Binding.deleter(configuration.get("TWILIO_NOTIFICATION_SERVICE_SID"), binding.getSid()).delete();
-                        }
-                    }
-                }
+                removeSameBindings(configuration, identity, bindingConfigRequest.type);
 
                 List<String> tags = new LinkedList<>();
                 if (bindingConfigRequest.acceptOffers)
                     tags.add("marketingEnabled");
+
                 // Create a binding
                 Binding.BindingType bindingType = Binding.BindingType.forValue(bindingConfigRequest.type);
-                BindingCreator creator = Binding.creator(configuration.get("TWILIO_NOTIFICATION_SERVICE_SID"),
+                BindingCreator creator = Binding.creator(
+                        configuration.get("TWILIO_NOTIFICATION_SERVICE_SID"),
                         bindingType + ":" + bindingConfigRequest.address + identity,
-                        identity, bindingType, bindingConfigRequest.address).setTag(tags);
+                        identity,
+                        bindingType,
+                        bindingConfigRequest.address)
+                        .setTag(tags);
+
 
                 Binding binding = creator.create();
                 logger.info("Binding successfully created");
@@ -485,6 +523,21 @@ public class ServerApp {
             return gson.toJson(json);
         });
         */
+    }
+
+    private static void removeSameBindings(Map<String, String> configuration,
+            String identity,
+            String bindingType) {
+        ResourceSet<Binding> bindings = Binding.reader(configuration.get("TWILIO_NOTIFICATION_SERVICE_SID"))
+                .setIdentity(identity)
+                .read();
+
+        for (Binding binding : bindings) {
+            if (binding.getBindingType().equals(bindingType)) {
+                logger.info("Delete binding: " + binding.getEndpoint());
+                Binding.deleter(configuration.get("TWILIO_NOTIFICATION_SERVICE_SID"), binding.getSid()).delete();
+            }
+        }
     }
 
     private static Map<String, User> getUserMap(Map<String, String> configuration) {
