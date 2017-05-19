@@ -11,6 +11,15 @@ import {
   Route,
   Link
 } from 'react-router-dom'
+import MessengerPlugin from 'react-messenger-plugin';
+
+class SendMessage extends Component {
+    render(){
+        return (
+            <MessengerPlugin appId="1188086834670409" pageId="1227037150727016"/>
+        );
+    }
+}
 
 class UserDetails extends Component {
     constructor(props) {
@@ -50,7 +59,7 @@ class UserDetails extends Component {
                                 <InputGroup.Addon>
                                     <OverlayTrigger placement="right" overlay={<Tooltip id={`offersTooltip_${index}`}>Receive offers</Tooltip>}>
                                         <input checked={this.state.user.bindings[index].offers} 
-                                            disabled={type != "sms" || this.state.isWorking}
+                                            disabled={this.state.isWorking}
                                             type="checkbox"
                                             onChange={this.handleOffersChange.bind(this, index)}/>
                                     </OverlayTrigger>
@@ -102,7 +111,7 @@ class UserDetails extends Component {
     saveUser(user) {
         let identity = this.props.identity;
         return new Promise((success, fail) => {
-            return fetch(`/users/${identity}/config`, {
+            return fetch(`/api/users/${identity}/config`, {
                         method: "POST", 
                         body: JSON.stringify({preferred: user.preferred}),
                         headers: {
@@ -128,7 +137,7 @@ class UserDetails extends Component {
                 return success();
             } else {
                 let payload = {type: "sms", address: smsBinding.status, acceptOffers: smsBinding.offers};
-                return fetch(`/users/${identity}/bindings`, {
+                return fetch(`/api/users/${identity}/bindings`, {
                             method: "POST", 
                             body: JSON.stringify(payload),
                             headers: {
@@ -195,7 +204,7 @@ class UserDetails extends Component {
     loadUser() {
         let identity = this.props.identity;
         return new Promise((success, fail) => {
-            return fetch(`/users/${identity}`)
+            return fetch(`/api/users/${identity}`)
                     .then(result => success(result.json()));
         });
     }

@@ -47,7 +47,7 @@ class UserList extends Component {
     }
     loadIdentities() {
         return new Promise((success, fail) => {
-            return fetch(`/users`)
+            return fetch(`/api/users`)
                     .then(result => success(result.json()))
                     .catch(err => fail(err.json()));
         });
