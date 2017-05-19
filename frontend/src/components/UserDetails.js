@@ -14,9 +14,12 @@ import {
 import MessengerPlugin from 'react-messenger-plugin';
 
 class SendMessage extends Component {
+    constructor(props){
+        super(props);
+    }
     render(){
         return (
-            <MessengerPlugin appId="1188086834670409" pageId="1227037150727016"/>
+            <MessengerPlugin passthroughParams={this.props.identity} appId="1188086834670409" pageId="1227037150727016"/>
         );
     }
 }
@@ -65,6 +68,8 @@ class UserDetails extends Component {
                                     </OverlayTrigger>
                                 </InputGroup.Addon>
                             </InputGroup>
+                            {type == "facebook-messenger" && binding.status.toLowerCase() == "not registered" ? 
+                                <SendMessage identity={this.props.identity}/> : null}
                             <HelpBlock>{this.getValidationState(index) != "success" ? this.getHelpMessage(type) : ""}</HelpBlock>
                         </FormGroup>
                     );

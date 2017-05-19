@@ -1,14 +1,15 @@
 import React, { Component } from 'react';
 import PropTypes from 'prop-types';
-import { Table,  Panel, Form, FormGroup, 
-        FormControl, InputGroup, ControlLabel, 
+import { Table,  Panel, Form, FormGroup, Grid, Row, Col, 
+        FormControl, InputGroup, ControlLabel, Image,
         HelpBlock, ButtonGroup, Button, Radio, Glyphicon } from 'react-bootstrap';
 import User from '../model/User';
 import {
   BrowserRouter as Router,
   Route,
   Link
-} from 'react-router-dom'
+} from 'react-router-dom';
+import logo from '../notify_beta_header.png';
 
 class UserList extends Component {
     constructor(props) {
@@ -25,22 +26,29 @@ class UserList extends Component {
                                     .identities
                                     .map((id, index) => 
                                             <tr key={index}>
-                                                <td>{index+1}</td>
                                                 <td><Link to={`/users/${id}`}>{id}</Link></td>
                                             </tr>
                                     );
         let table = (
-            <Table>
-                <thead>
-                    <tr>
-                        <th>#</th>
-                        <th>Identity</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {identitiesTable}
-                </tbody>
-            </Table>
+            <div>
+                <Image responsive src={logo} rounded />
+                <Grid fluid>
+                    <Row>
+                        <Col xs={12} md={4} mdPush={3}>
+                            <Table>
+                                <thead>
+                                    <tr>
+                                        <th>Identity</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {identitiesTable}
+                                </tbody>
+                            </Table>
+                        </Col>
+                    </Row>
+                </Grid>
+            </div>
         );
         return this.state.isLoaded ? table : loadingMessage;
         
