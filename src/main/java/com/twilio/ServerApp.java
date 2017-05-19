@@ -49,11 +49,12 @@ public class ServerApp {
             bindings.add(new UserBinding("gcm"));
             bindings.add(new UserBinding("fcm"));
             bindings.add(new UserBinding("sms"));
+            bindings.add(new UserBinding("facebook-messenger"));
         }
 
         public String username;
         public List<UserBinding> bindings = new LinkedList<>();
-        public String preferred;
+        public String preferred = "";
     }
 
     private static class BindingConfigRequest {
