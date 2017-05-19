@@ -7,7 +7,10 @@ POST /users/:id/config
 request: { preferred: "sms" }
 
 POST /users/:id/bindings
+to register sms:
 request: {type: "sms", address: "+372777777", acceptOffers: "true"} // only valid if type == sms
+to alter any binding acceptOffers type:
+request: {type: "sms", acceptOffers: "true"}
 
 POST /users/:id/message
 request: {text: "text", preferred: "true"}

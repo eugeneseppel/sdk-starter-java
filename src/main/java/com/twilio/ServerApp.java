@@ -328,32 +328,72 @@ public class ServerApp {
 
                 BindingConfigRequest bindingConfigRequest = gson.fromJson(request.body(), BindingConfigRequest.class);
 
-                standartResponse.message = "OK " + identity
-                        + " " + bindingConfigRequest.type + " " + bindingConfigRequest.address;
+                final Binding.BindingType bindingType = Binding.BindingType.forValue(bindingConfigRequest.type);
 
-                //delete old bindings of same type
-                removeSameBindings(configuration, identity, bindingConfigRequest.type);
+                Binding previousBinding = null;
 
-                List<String> tags = new LinkedList<>();
+                final boolean smsBindingAndToRemove =
+                        (bindingConfigRequest.type.equals(BindingType.SMS.toString()) && bindingConfigRequest.address != null);
+
+                // for SMS we just delete old bindings of same type
+                if (smsBindingAndToRemove) {
+                    removeSameBindings(configuration, identity, bindingConfigRequest.type);
+                }
+                else  { // all other bindings
+                    // Get previous binding
+                    ResourceSet<Binding> bindings = Binding.reader(configuration.get("TWILIO_NOTIFICATION_SERVICE_SID"))
+                            .setIdentity(identity).read();
+
+                    for (Binding binding : bindings) {
+                        logger.info("Found old binding: " + binding.getBindingType());
+                        if (binding.getBindingType().equals(bindingConfigRequest.type)) {
+                            previousBinding = binding;
+
+                            break;
+                        }
+                    }
+                }
+
+                List<String> newTags = null;
+                String newAddress = null;
+                String newEndpoint = null;
+
+                // configure values for new binding
+                if (smsBindingAndToRemove) {
+                    newTags = new LinkedList<>();
+                    newAddress = bindingConfigRequest.address;
+                    newEndpoint = bindingType + ":" + bindingConfigRequest.address + identity;
+                }
+                else {
+                    if (previousBinding == null)
+                        throw new java.lang.Exception("No binding to configure");
+                    newAddress = previousBinding.getAddress();
+                    newEndpoint = previousBinding.getEndpoint();
+                    newTags = previousBinding.getTags();
+                    if (newTags == null)
+                        newTags = new LinkedList<>();
+                }
+
                 if (bindingConfigRequest.acceptOffers)
-                    tags.add("marketingEnabled");
+                    newTags.add("marketingEnabled");
+                else
+                    newTags.remove("marketingEnabled");
 
                 // Create a binding
-                Binding.BindingType bindingType = Binding.BindingType.forValue(bindingConfigRequest.type);
                 BindingCreator creator = Binding.creator(
                         configuration.get("TWILIO_NOTIFICATION_SERVICE_SID"),
-                        bindingType + ":" + bindingConfigRequest.address + identity,
-                        identity,
-                        bindingType,
-                        bindingConfigRequest.address)
-                        .setTag(tags);
-
+                        newEndpoint, identity, bindingType, newAddress)
+                        .setTag(newTags);
 
                 Binding binding = creator.create();
                 logger.info("Binding successfully created");
                 logger.debug(binding.toString());
 
+                standartResponse.message = "OK " + identity
+                        + " " + bindingConfigRequest.type + " " + bindingConfigRequest.address;
+
                 response.type("application/json");
+
                 return gson.toJson(standartResponse);
 
             } catch (com.twilio.exception.ApiException ex) {
