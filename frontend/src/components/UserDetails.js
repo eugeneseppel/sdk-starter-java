@@ -11,16 +11,34 @@ import {
   Route,
   Link
 } from 'react-router-dom'
-import MessengerPlugin from 'react-messenger-plugin';
+import MessengerPlugin from 'react-messenger-plugin/lib/MessengerPlugin';
 
 class SendMessage extends Component {
     constructor(props){
         super(props);
     }
     render(){
+        let html = `<div class="fb-send-to-messenger" 
+                        messenger_app_id="1188086834670409" 
+                        page_id="1227037150727016" 
+                        data-ref="${this.props.identity}" 
+                        color="blue" 
+                        size="standard">
+                    </div> `;
+        let markup = {__html: html};
         return (
-            <MessengerPlugin passthroughParams={this.props.identity} appId="1188086834670409" pageId="1227037150727016"/>
+            <div dangerouslySetInnerHTML={markup}/>
         );
+    }
+    componentDidMount() {
+        window.FB.init({
+            appId: 1188086834670409,
+            version: "v2.6",
+            xfbml: true
+        });
+        window.FB.Event.subscribe('send_to_messenger', (e) => {
+            if(e.event == "opt_in" && e.ref == this.props.identity){this.props.onMessengerRegistered()}; 
+        });
     }
 }
 
@@ -69,7 +87,7 @@ class UserDetails extends Component {
                                 </InputGroup.Addon>
                             </InputGroup>
                             {type == "facebook-messenger" && binding.status.toLowerCase() == "not registered" ? 
-                                <SendMessage identity={this.props.identity}/> : null}
+                                <SendMessage onMessengerRegistered={this.onMessengerRegistered.bind(this, index)} identity={this.props.identity}/> : null}
                             <HelpBlock>{this.getValidationState(index) != "success" ? this.getHelpMessage(type) : ""}</HelpBlock>
                         </FormGroup>
                     );
@@ -100,6 +118,10 @@ class UserDetails extends Component {
             case "facebook-messenger": return "Facebook Messenger";
             default: return "Unknown Address";
         }
+    }
+    onMessengerRegistered(index) {
+        this.state.user.bindings[index].status = "Registered";
+        this.setState({user: this.state.user});
     }
     doSave(user) {
         console.dir(user);
@@ -136,29 +158,31 @@ class UserDetails extends Component {
     }
     saveBindings(bindings) {
         let identity = this.props.identity;
-        let smsBinding = bindings.find(value => value != null && value.type == "sms");
-        return new Promise((success, fail) => {
-            if(!smsBinding) {
-                return success();
-            } else {
-                let payload = {type: "sms", address: smsBinding.status, acceptOffers: smsBinding.offers};
-                return fetch(`/api/users/${identity}/bindings`, {
-                            method: "POST", 
-                            body: JSON.stringify(payload),
-                            headers: {
-                                'Accept': 'application/json, text/plain, */*',
-                                'Content-Type': 'application/json'
-                            }
-                        })
-                        .then(response => {
-                            if(response.ok) {
-                                success(response.json());
-                            } else {
-                                throw Error(response.statusText);
-                            }
-                        }).catch(err => fail(err));
-            }
-        });
+        let promises = bindings
+                .filter((binding, index) => 
+                            this.getValidationState(index) == "success" 
+                            && binding.status.toLowerCase() != "not registered"
+                )
+                .map(binding => {
+                    return new Promise((resolve, reject) => {
+                        return fetch(`/api/users/${identity}/bindings`, {
+                                        method: "POST", 
+                                        body: JSON.stringify({type: binding.type, address: binding.status, acceptOffers: binding.offers}),
+                                        headers: {
+                                            'Accept': 'application/json, text/plain, */*',
+                                            'Content-Type': 'application/json'
+                                        }
+                                    })
+                                    .then(response => {
+                                        if(response.ok) {
+                                            resolve(response.json());
+                                        } else {
+                                            throw Error(response.statusText);
+                                        }
+                                    }).catch(err => reject(err));
+                    });
+                });
+        return Promise.all(promises);
     }
     handleSubmit(event) {
         event.preventDefault();
