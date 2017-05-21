@@ -12,6 +12,8 @@ import {
   Link
 } from 'react-router-dom'
 import MessengerPlugin from 'react-messenger-plugin/lib/MessengerPlugin';
+const APP_ID=1188086834670409;
+const PAGE_ID=1227037150727016
 
 class SendMessage extends Component {
     constructor(props){
@@ -19,8 +21,8 @@ class SendMessage extends Component {
     }
     render(){
         let html = `<div class="fb-send-to-messenger" 
-                        messenger_app_id="1188086834670409" 
-                        page_id="1227037150727016" 
+                        messenger_app_id="${APP_ID}" 
+                        page_id="${PAGE_ID}" 
                         data-ref="${this.props.identity}" 
                         color="blue" 
                         size="standard">
@@ -32,7 +34,7 @@ class SendMessage extends Component {
     }
     componentDidMount() {
         window.FB.init({
-            appId: 1188086834670409,
+            appId: APP_ID,
             version: "v2.6",
             xfbml: true
         });
@@ -80,7 +82,7 @@ class UserDetails extends Component {
                                 <InputGroup.Addon>
                                     <OverlayTrigger placement="right" overlay={<Tooltip id={`offersTooltip_${index}`}>Receive offers</Tooltip>}>
                                         <input checked={this.state.user.bindings[index].offers} 
-                                            disabled={this.state.isWorking}
+                                            disabled={this.state.isWorking || binding.status.toLowerCase() == "not registered"}
                                             type="checkbox"
                                             onChange={this.handleOffersChange.bind(this, index)}/>
                                     </OverlayTrigger>
@@ -188,10 +190,10 @@ class UserDetails extends Component {
         event.preventDefault();
         console.dir(this.state.user);
         let user = this.state.user;
-        let valid = user.bindings.map((value, index) => this.getValidationState(index) == "success").reduce((prev, cur) => prev && cur);
-        if(valid){
-            this.doSave(user);
-        }
+        // let valid = user.bindings.map((value, index) => this.getValidationState(index) == "success").reduce((prev, cur) => prev && cur);
+        // if(valid){
+        this.doSave(user);
+        // }
     }
     handleChange(index, event) {
         let user = this.state.user;
@@ -218,14 +220,14 @@ class UserDetails extends Component {
     getValidationState(index) {
         let binding = this.state.user.bindings[index];
         switch(binding.type) {
-            case "sms": return /^\+?[1-9]\d{1,14}$/.exec(binding.status) && !this.state.isAddressIncorrect ? "success" : "error";
+            case "sms": return /^\+?[1-9]\d{1,14}$/.exec(binding.status) && !this.state.isAddressIncorrect ? "success" : "warning";
             case "apn": return "success";
             case "facebook-messenger": return "success";
         }
     }
     getHelpMessage(bindingType) {
         switch(bindingType) {
-            case "sms": return "Should be an E.164 phone number!";
+            case "sms": return "Invalid phone number!";
             case "apn": return "Incorrect address!";
             case "facebook-messenger": return "Incorrect address!";
         }
