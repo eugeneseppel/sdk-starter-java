@@ -12,8 +12,8 @@ import {
   Link
 } from 'react-router-dom'
 import MessengerPlugin from 'react-messenger-plugin/lib/MessengerPlugin';
-const APP_ID=1188086834670409;
-const PAGE_ID=1227037150727016
+// const APP_ID=318910961855878;
+// const PAGE_ID=1342876545800569;
 
 class SendMessage extends Component {
     constructor(props){
@@ -21,8 +21,8 @@ class SendMessage extends Component {
     }
     render(){
         let html = `<div class="fb-send-to-messenger" 
-                        messenger_app_id="${APP_ID}" 
-                        page_id="${PAGE_ID}" 
+                        messenger_app_id="${window.APP_ID}" 
+                        page_id="${window.PAGE_ID}" 
                         data-ref="${this.props.identity}" 
                         color="blue" 
                         size="standard">
@@ -34,7 +34,7 @@ class SendMessage extends Component {
     }
     componentDidMount() {
         window.FB.init({
-            appId: APP_ID,
+            appId: window.APP_ID,
             version: "v2.6",
             xfbml: true
         });
@@ -50,8 +50,7 @@ class UserDetails extends Component {
         this.state = {
             isLoaded: false,
             isWorking: false,
-            user: new User("none", [], "none"),
-            isAddressIncorrect: false
+            user: new User("none", [], "none")
         };
     }
     render() {
@@ -88,9 +87,9 @@ class UserDetails extends Component {
                                     </OverlayTrigger>
                                 </InputGroup.Addon>
                             </InputGroup>
+                            <HelpBlock>{this.getValidationState(index) != "success" ? this.getHelpMessage(type) : ""}</HelpBlock>
                             {type == "facebook-messenger" && binding.status.toLowerCase() == "not registered" ? 
                                 <SendMessage onMessengerRegistered={this.onMessengerRegistered.bind(this, index)} identity={this.props.identity}/> : null}
-                            <HelpBlock>{this.getValidationState(index) != "success" ? this.getHelpMessage(type) : ""}</HelpBlock>
                         </FormGroup>
                     );
                 });
@@ -133,7 +132,7 @@ class UserDetails extends Component {
             .then(() => this.props.history.push("/"))
             .catch(error => {
                console.log(error);
-               this.setState({isWorking: false, isAddressIncorrect: true}); 
+               this.setState({isWorking: false}); 
             });
             
     }
@@ -163,7 +162,6 @@ class UserDetails extends Component {
         let promises = bindings
                 .filter((binding, index) => 
                             this.getValidationState(index) == "success" 
-                            && binding.status.toLowerCase() != "not registered"
                 )
                 .map(binding => {
                     return new Promise((resolve, reject) => {
@@ -203,7 +201,7 @@ class UserDetails extends Component {
             case "apn": break;
             case "facebook-messenger": break;
         }
-        this.setState({user: user, isAddressIncorrect: false});
+        this.setState({user: user});
     }
     handlePreferredChange(index, event){
         let user = this.state.user;
@@ -220,16 +218,16 @@ class UserDetails extends Component {
     getValidationState(index) {
         let binding = this.state.user.bindings[index];
         switch(binding.type) {
-            case "sms": return /^\+?[1-9]\d{1,14}$/.exec(binding.status) && !this.state.isAddressIncorrect ? "success" : "warning";
-            case "apn": return "success";
-            case "facebook-messenger": return "success";
+            case "sms": return /^\+?[1-9]\d{1,14}$/.exec(binding.status) ? "success" : "warning";
+            case "apn": return binding.status.toLowerCase() == "not registered" ?  "warning" : "success";
+            case "facebook-messenger": return binding.status.toLowerCase() == "not registered" ?  "warning" : "success";
         }
     }
     getHelpMessage(bindingType) {
         switch(bindingType) {
-            case "sms": return "Invalid phone number!";
-            case "apn": return "Incorrect address!";
-            case "facebook-messenger": return "Incorrect address!";
+            case "sms": return "Invalid or missing phone number!";
+            case "apn": return "Register using an iOS device";
+            case "facebook-messenger": return "Click the 'Send to Messenger' button to register";
         }
     }
     loadUser() {
